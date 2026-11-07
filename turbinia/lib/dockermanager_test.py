@@ -14,8 +14,6 @@
 # limitations under the License.
 """Tests for docker_manager module."""
 
-from __future__ import unicode_literals
-
 import unittest
 import codecs
 import mock
@@ -37,8 +35,8 @@ class MockImage:
 
   def __init__(self, id, short_id):
     """Initialization of the MockImage class."""
-    self.id = 'sha256:{0:s}'.format(id)
-    self.short_id = 'sha256:{0:s}'.format(short_id)
+    self.id = f'sha256:{id:s}'
+    self.short_id = f'sha256:{short_id:s}'
 
 
 class MockContainer:
@@ -66,7 +64,7 @@ class MockContainer:
     """Mock method of container.logs()"""
     return self.s_logs
 
-  def wait(self):
+  def wait(self, timeout):
     """Mock method of container.wait()"""
     return self.s_wait
 
@@ -93,11 +91,11 @@ class TestDockerManager(unittest.TestCase):
     # Test normal execution.
     test_img = '1234'
     self.docker_mgr.client = mock.MagicMock()
-    self.docker_mgr.client.images.get.return_value = test_img
+    self.docker_mgr.client.images.pull.return_value = test_img
     assert test_img == self.docker_mgr.get_image(test_img)
 
     # Ensure exception is being handled when image doesn't exist.
-    self.docker_mgr.client.images.get.side_effect = docker.errors.ImageNotFound(
+    self.docker_mgr.client.images.pull.side_effect = docker.errors.ImageNotFound(
         'mock test fail.')
     self.assertRaises(TurbiniaException, self.docker_mgr.get_image, test_img)
 
@@ -144,7 +142,7 @@ class TestContainerManager(unittest.TestCase):
     """Tests __init__ method of ContainerManager."""
     # Ensure correct instance and image id
     assert self.container_mgr.client == docker.client.DockerClient
-    assert self.container_mgr.image == self.test_img
+    assert self.container_mgr.image_id == self.test_img
 
   @mock.patch('turbinia.lib.docker_manager.IsBlockDevice')
   def testCreateMountPoints(self, mock_blockcheck):

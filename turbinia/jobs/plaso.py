@@ -14,9 +14,12 @@
 # limitations under the License.
 """Job to execute Plaso task."""
 
-from __future__ import unicode_literals
+import logging
 
-from turbinia.evidence import APFSEncryptedDisk
+from turbinia.evidence import EwfDisk
+from turbinia.evidence import BodyFile
+from turbinia.evidence import ContainerdContainer
+from turbinia.evidence import DockerContainer
 from turbinia.evidence import CompressedDirectory
 from turbinia.evidence import Directory
 from turbinia.evidence import GoogleCloudDisk
@@ -25,15 +28,17 @@ from turbinia.evidence import PlasoFile
 from turbinia.evidence import RawDisk
 from turbinia.jobs import interface
 from turbinia.jobs import manager
-from turbinia.workers.plaso import PlasoTask
+from turbinia.workers.plaso import PlasoParserTask
+from turbinia.workers.plaso import PlasoHasherTask
 
 
 class PlasoJob(interface.TurbiniaJob):
   """Runs Plaso on some evidence to generate a Plaso file."""
   # The types of evidence that this Job will process
   evidence_input = [
-      Directory, RawDisk, GoogleCloudDisk, GoogleCloudDiskRawEmbedded,
-      APFSEncryptedDisk, CompressedDirectory
+      BodyFile, ContainerdContainer, Directory, EwfDisk, RawDisk,
+      GoogleCloudDisk, GoogleCloudDiskRawEmbedded, CompressedDirectory,
+      DockerContainer
   ]
   evidence_output = [PlasoFile]
 
@@ -46,9 +51,15 @@ class PlasoJob(interface.TurbiniaJob):
       evidence: List of evidence objects to process
 
     Returns:
-        A list of PlasoTasks.
+        A list of PlasoParserTask and PlasoHasherTask objects.
     """
-    return [PlasoTask() for _ in evidence]
+    tasks = []
+    for evidence_object in evidence:
+      # No need to run the hasher task for BodyFile type.
+      if evidence_object.type != 'BodyFile':
+        tasks.append(PlasoHasherTask())
+      tasks.append(PlasoParserTask())
+    return tasks
 
 
 manager.JobsManager.RegisterJob(PlasoJob)

@@ -14,8 +14,6 @@
 # limitations under the License.
 """Library to handle docker related queries."""
 
-from __future__ import unicode_literals
-
 import logging
 import codecs
 import os
@@ -25,7 +23,8 @@ import docker
 
 from turbinia import TurbiniaException
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
+checked_image_list = []
 
 
 def IsBlockDevice(path):
@@ -99,15 +98,43 @@ class DockerManager:
       docker_client = docker.from_env()
     except docker.errors.APIError as exception:
       raise TurbiniaException(
-          'An issue has occurred connecting to the Docker daemon: {0!s}'.format(
-              exception))
+          f'An issue has occurred connecting to the Docker daemon: {exception!s}'
+      )
+    except docker.errors.DockerException as exception:
+      raise TurbiniaException(
+          f'An issue has occurred connecting to the Docker daemon: {exception!s}'
+      )
     return docker_client
+
+  def image_exists(self, image_id):
+    """Check if image exists in registry
+    Args:
+      image_id(str): The image id.
+
+    Returns:
+      bool: True or False.
+    
+    Raises:
+      TurbiniaException: If the Docker Image is not found in the registry.
+    """
+    try:
+      if image_id not in checked_image_list:
+        base_image = image_id.split(':')[0]
+        found = self.client.images.search(base_image)
+        if len(found) == 0:
+          return False
+        # Add image digest to checked image list
+        checked_image_list.append(image_id)
+    except docker.errors.APIError as exception:
+      raise TurbiniaException(
+          f'An error occurred checking if image exists: {exception!s}')
+    return True
 
   def get_image(self, image_id):
     """Retrieve the Docker Image object.
 
     Args:
-      image_id(str): The short image id.
+      image_id(str): The image id.
 
     Returns:
       image(Image): The Image object.
@@ -116,7 +143,7 @@ class DockerManager:
       TurbiniaException: If the Docker Image is not found.
     """
     try:
-      image = self.client.images.get(image_id)
+      image = self.client.images.pull(image_id)
     except docker.errors.ImageNotFound as exception:
       message = 'The Docker image {0!s} could not be found: {1!s}'
       raise TurbiniaException(message.format(image_id, exception))
@@ -147,7 +174,7 @@ class DockerManager:
         ]
     except docker.errors.APIError as exception:
       raise TurbiniaException(
-          'An error occurred retrieving the images: {0!s}'.format(exception))
+          f'An error occurred retrieving the images: {exception!s}')
     return images
 
 
@@ -165,7 +192,7 @@ class ContainerManager(DockerManager):
       image_id(str): The image id to create a container from.
     """
     super(ContainerManager, self).__init__()
-    self.image = self.get_image(image_id)
+    self.image_id = image_id
 
   def _create_mount_points(self, mount_paths, mode='rw'):
     """Creates file and device mounting arguments.
@@ -193,7 +220,7 @@ class ContainerManager(DockerManager):
 
     if mode in accepted_vars:
       for mpath in mount_paths:
-        device_mpath = '{0:s}:{0:s}:{1:s}'.format(mpath, 'r')
+        device_mpath = '{0:s}:{0:s}:{1:s}'.format(str(mpath), 'r')
         if mpath not in file_paths.keys() and device_mpath not in device_paths:
           if IsBlockDevice(mpath):
             device_paths.append(device_mpath)
@@ -207,7 +234,8 @@ class ContainerManager(DockerManager):
     return device_paths, file_paths
 
   def execute_container(
-      self, cmd, shell=False, ro_paths=None, rw_paths=None, **kwargs):
+      self, cmd, shell=False, ro_paths=None, rw_paths=None, timeout_limit=3600,
+      **kwargs):
     """Executes a Docker container.
 
     A new Docker container will be created from the image id,
@@ -217,6 +245,7 @@ class ContainerManager(DockerManager):
       cmd(str|list): command to be executed.
       shell (bool): Whether the cmd is in the form of a string or a list.
       mount_paths(list): A list of paths to mount to the container.
+      timeout_limit(int): The number of seconds before killing a container.
       **kwargs: Any additional keywords to pass to the container.
 
     Returns:
@@ -234,10 +263,10 @@ class ContainerManager(DockerManager):
     # Override the entrypoint to /bin/sh
     kwargs['entrypoint'] = '/bin/sh'
     if shell:
-      cmd = '-c ' + '\"{0:s}\"'.format(cmd)
+      cmd = '-c ' + f'"{cmd:s}"'
     else:
       cmd = ' '.join(cmd)
-      cmd = '-c ' + '\"{0:s}\"'.format(cmd)
+      cmd = '-c ' + f'"{cmd:s}"'
 
     # Create the device and file mount paths
     device_paths = []
@@ -253,13 +282,15 @@ class ContainerManager(DockerManager):
 
     args['devices'] = device_paths
     args['volumes'] = file_paths
+    args['privileged'] = True
 
     # Add any additional arguments
     for key, value in kwargs.items():
       args[key] = value
 
     try:
-      container = self.client.containers.create(self.image, cmd, **args)
+      image = self.get_image(self.image_id)
+      container = self.client.containers.create(image, cmd, **args)
       container.start()
       # Stream program stdout from container
       stdstream = container.logs(stream=True)
@@ -267,16 +298,18 @@ class ContainerManager(DockerManager):
         stdo = codecs.decode(stdo, 'utf-8').strip()
         log.debug(stdo)
         stdout += stdo
-      results = container.wait()
+      results = container.wait(timeout=timeout_limit)
     except docker.errors.APIError as exception:
       if container:
         container.remove(v=True)
-      message = (
-          'An error has occurred with the container: {0!s}'.format(exception))
+      message = (f'An error has occurred with the container: {exception!s}')
       log.error(message)
       raise TurbiniaException(message)
 
-    stderr, ret = results['Error'], results['StatusCode']
+    stderr = None
+    ret = results['StatusCode']
+    if ret != 0:
+      stderr = results['Error']
     if container:
       container.remove(v=True)
 

@@ -1,6 +1,8 @@
 # Developing on a local Turbinia setup (no cloud required)
 
-See [here](../user/turbinia-local-stack.md) on how to setup the local Turbinia stack with Docker.
+[UPDATE: VSCode + k8s development setup is described [here](develop-minikube.md)]
+
+See [here](../user/install.md) on how to setup the local Turbinia stack with Docker.
 
 After you have the local stack up and running a usual development cycle would look like below.
 
@@ -25,7 +27,7 @@ Rebuild Turbinia server and/or worker Docker images.
 $ docker build -t turbinia-worker-dev -f docker/worker/Dockerfile .
 ```
 #### Step 4
-Change the ```image:``` location in the ```docker/local/docker-compose.yml``` file to point to your localy build image (eg turbinia-worker-dev).
+Change the ```image:``` location in the ```docker/local/docker-compose.yml``` file to point to your locally build image (eg turbinia-worker-dev).
 
 #### Step 5
 Let's bring up the local Turbinia stack 

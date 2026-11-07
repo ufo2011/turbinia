@@ -14,8 +14,6 @@
 # limitations under the License.
 """Tests for workers __init__."""
 
-from __future__ import unicode_literals
-
 import json
 import os
 import tempfile
@@ -26,24 +24,23 @@ from turbinia import evidence
 from turbinia import TurbiniaException
 from turbinia.workers import TurbiniaTask
 from turbinia.workers import TurbiniaTaskResult
-from turbinia.workers.plaso import PlasoTask
-from turbinia import state_manager
+from turbinia.workers.plaso import PlasoParserTask
 from prometheus_client import REGISTRY
 
 
 class TestTurbiniaTaskBase(unittest.TestCase):
   """Test TurbiniaTask class.
 
-  Attributes:
-    class_task(TurbiniaTask): The class the test should instantiated
-    remove_file(list(str)): Files that will be removed after the test run
-    remove_dirs(list(str)): Dirs that will be removed after the test run
-    base_output_dir(str): The base output directory used by the Task
-    task(TurbiniaTask): The instantiated Task under test
-    test_stdout_path(str): A path we can use to send temporary stdout too
-    evidence(Evidence): The test evidence object used by the Task
-    result(TurbiniaResult): The result object used by the Task
-  """
+    Attributes:
+      class_task(TurbiniaTask): The class the test should instantiated
+      remove_file(list(str)): Files that will be removed after the test run
+      remove_dirs(list(str)): Dirs that will be removed after the test run
+      base_output_dir(str): The base output directory used by the Task
+      task(TurbiniaTask): The instantiated Task under test
+      test_stdout_path(str): A path we can use to send temporary stdout too
+      evidence(Evidence): The test evidence object used by the Task
+      result(TurbiniaResult): The result object used by the Task
+    """
 
   def setUp(self, task_class=TurbiniaTask, evidence_class=evidence.RawDisk):
     self.task_class = task_class
@@ -53,22 +50,25 @@ class TestTurbiniaTaskBase(unittest.TestCase):
 
     # Set up Tasks under test
     self.base_output_dir = tempfile.mkdtemp()
-    self.plaso_task = PlasoTask(base_output_dir=self.base_output_dir)
+    self.plaso_task = PlasoParserTask(base_output_dir=self.base_output_dir)
     self.plaso_task.output_manager = mock.MagicMock()
     self.plaso_task.output_manager.get_local_output_dirs.return_value = (
         None, None)
     self.task = self.task_class(base_output_dir=self.base_output_dir)
     self.task.job_name = 'PlasoJob'
+    self.task.job_id = 'FakeJobID'
     self.task.output_manager = mock.MagicMock()
     self.task.output_manager.get_local_output_dirs.return_value = (None, None)
     self.task.get_metrics = mock.MagicMock()
 
-    # Set up RawDisk Evidence
+    # Set up the Evidence object.
     test_disk_path = tempfile.mkstemp(dir=self.base_output_dir)[1]
     self.remove_files.append(test_disk_path)
     self.test_stdout_path = tempfile.mkstemp(dir=self.base_output_dir)[1]
     self.remove_files.append(self.test_stdout_path)
-    self.evidence = evidence.RawDisk(source_path=test_disk_path)
+    self.evidence = self.evidence_class(source_path=test_disk_path)
+    self.evidence.config['abort'] = False
+    self.evidence.config['globals'] = {}
     self.evidence.preprocess = mock.MagicMock()
     # Set up TurbiniaTaskResult
     self.result = TurbiniaTaskResult(base_output_dir=self.base_output_dir)
@@ -85,17 +85,18 @@ class TestTurbiniaTaskBase(unittest.TestCase):
         os.rmdir(directory)
 
     os.rmdir(self.base_output_dir)
+    self.unregisterMetrics()
 
   def setResults(
       self, setup=None, run=None, validate_result=None, mock_run=True):
     """Set up mock returns in TurbiniaTaskResult object.
 
-    Args:
-      setup: What value to return from setup()
-      run: What value to return from run()
-      validate_result: What value to return from validate_result()
-      mock_run(bool): Whether to mock out the run method
-    """
+        Args:
+          setup: What value to return from setup()
+          run: What value to return from run()
+          validate_result: What value to return from validate_result()
+          mock_run(bool): Whether to mock out the run method
+        """
     if setup is None:
       setup = self.result
     if run is None:
@@ -105,7 +106,6 @@ class TestTurbiniaTaskBase(unittest.TestCase):
 
     self.result.input_evidence = evidence.RawDisk()
     self.result.status = 'TestStatus'
-    self.result.update_task_status = mock.MagicMock()
     self.result.close = mock.MagicMock()
     self.task.setup = mock.MagicMock(return_value=setup)
     self.result.worker_name = 'worker1'
@@ -116,26 +116,41 @@ class TestTurbiniaTaskBase(unittest.TestCase):
 
   def unregisterMetrics(self):
     """Unset all the metrics to avoid duplicated timeseries error."""
-    for collector, names in tuple(REGISTRY._collector_to_names.items()):
+    for collector, _ in tuple(REGISTRY._collector_to_names.items()):
       REGISTRY.unregister(collector)
 
 
 class TestTurbiniaTask(TestTurbiniaTaskBase):
   """Test TurbiniaTask class."""
 
+  def testTurbiniaTaskCloseTruncate(self):
+    """Tests that the close method will truncate large report output."""
+    evidence_ = evidence.ReportText(source_path='/no/path')
+    max_size = 2**20
+    evidence_.text_data = 'A' * max_size
+    self.result.add_evidence(evidence_, self.task._evidence_config)
+    self.result.close(self.task, success=True)
+    self.remove_files.append(
+        os.path.join(self.task.base_output_dir, 'worker-log.txt'))
+    self.assertIn('truncating', evidence_.text_data[-100:])
+    self.assertTrue(len(evidence_.text_data) <= (max_size * 0.8))
+
   def testTurbiniaTaskSerialize(self):
     """Test that we can properly serialize/deserialize tasks."""
     out_dict = self.plaso_task.serialize()
     out_obj = TurbiniaTask.deserialize(out_dict)
-    self.assertIsInstance(out_obj, PlasoTask)
+    self.assertIsInstance(out_obj, PlasoParserTask)
     # Nuke output_manager so we don't deal with class equality
     self.plaso_task.output_manager = None
     out_obj.output_manager = None
     self.assertEqual(out_obj.__dict__, self.plaso_task.__dict__)
 
-  def testTurbiniaTaskRunWrapper(self):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskRunWrapper(
+      self,
+      _,
+  ):
     """Test that the run wrapper executes task run."""
-    self.unregisterMetrics()
     self.setResults()
     self.result.closed = True
     new_result = self.task.run_wrapper(self.evidence.__dict__)
@@ -144,9 +159,12 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.assertEqual(new_result.status, 'TestStatus')
     self.result.close.assert_not_called()
 
-  def testTurbiniaTaskRunWrapperAutoClose(self):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskRunWrapperAutoClose(
+      self,
+      _,
+  ):
     """Test that the run wrapper closes the task."""
-    self.unregisterMetrics()
     self.setResults()
     new_result = self.task.run_wrapper(self.evidence.__dict__)
     new_result = TurbiniaTaskResult.deserialize(new_result)
@@ -154,9 +172,9 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.result.close.assert_called()
 
   @mock.patch('turbinia.state_manager.get_state_manager')
-  def testTurbiniaTaskRunWrapperBadResult(self, _):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskRunWrapperBadResult(self, _, __):
     """Test that the run wrapper recovers from run returning bad result."""
-    self.unregisterMetrics()
     bad_result = 'Not a TurbiniaTaskResult'
     checked_result = TurbiniaTaskResult(base_output_dir=self.base_output_dir)
     checked_result.setup(self.task)
@@ -168,9 +186,9 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.assertEqual(type(new_result), TurbiniaTaskResult)
     self.assertIn('CheckedResult', new_result.status)
 
-  def testTurbiniaTaskJobUnavailable(self):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskJobUnavailable(self, _):
     """Test that the run wrapper can fail if the job doesn't exist."""
-    self.unregisterMetrics()
     self.setResults()
     self.task.job_name = 'non_exist'
     canary_status = (
@@ -180,9 +198,9 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     new_result = TurbiniaTaskResult.deserialize(new_result)
     self.assertEqual(new_result.status, canary_status)
 
-  def testTurbiniaTaskRunWrapperExceptionThrown(self):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskRunWrapperExceptionThrown(self, _):
     """Test that the run wrapper recovers from run throwing an exception."""
-    self.unregisterMetrics()
     self.setResults()
     self.task.run = mock.MagicMock(side_effect=TurbiniaException)
 
@@ -191,20 +209,29 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.assertEqual(type(new_result), TurbiniaTaskResult)
     self.assertIn('failed', new_result.status)
 
+  @mock.patch('turbinia.workers.TurbiniaTask.create_result')
   @mock.patch('turbinia.state_manager.get_state_manager')
-  def testTurbiniaTaskRunWrapperSetupFail(self, _):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskRunWrapperSetupFail(self, _, __, mock_create_result):
     """Test that the run wrapper recovers from setup failing."""
     self.task.result = None
     canary_status = 'exception_message'
     self.task.setup = mock.MagicMock(
         side_effect=TurbiniaException('exception_message'))
+
+    self.result.no_output_manager = True
+    mock_create_result.return_value = self.result
     self.remove_files.append(
         os.path.join(self.task.base_output_dir, 'worker-log.txt'))
 
     new_result = self.task.run_wrapper(self.evidence.__dict__)
     new_result = TurbiniaTaskResult.deserialize(new_result)
     self.assertEqual(type(new_result), TurbiniaTaskResult)
-    self.assertIn(canary_status, new_result.status)
+    # Checking specifically for `False` value and not whether this evaluates to
+    # `False` because we don't want the `None` case to pass.
+    self.assertEqual(new_result.successful, False)
+    create_results_args = mock_create_result.call_args.kwargs
+    self.assertIn(canary_status, create_results_args['message'])
 
   def testTurbiniaTaskValidateResultGoodResult(self):
     """Tests validate_result with good result."""
@@ -225,7 +252,8 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.assertNotEqual(new_result.error, {})
 
   @mock.patch('turbinia.workers.evidence_decode')
-  def testTurbiniaTaskEvidenceValidationFailure(self, evidence_decode_mock):
+  @mock.patch('turbinia.redis_client.RedisClient.set_attribute')
+  def testTurbiniaTaskEvidenceValidationFailure(self, _, evidence_decode_mock):
     """Tests Task fails when evidence validation fails."""
     self.setResults()
     test_evidence = evidence.RawDisk()
@@ -240,7 +268,7 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
   def testTurbiniaTaskExecute(self, popen_mock):
     """Test execution with success case."""
     cmd = 'test cmd'
-    output = (b'test stdout', b'test stderr')
+    output = ('test stdout', 'test stderr')
 
     self.result.close = mock.MagicMock()
     proc_mock = mock.MagicMock()
@@ -251,13 +279,14 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.task.execute(
         cmd, self.result, stdout_file=self.test_stdout_path, close=True)
 
-    with open(self.test_stdout_path, 'rb') as stdout_path:
+    with open(self.test_stdout_path, 'r') as stdout_path:
       stdout_data = stdout_path.read()
 
     # Command was executed, has the correct output saved and
     # TurbiniaTaskResult.close() was called with successful status.
-    popen_mock.assert_called_with(cmd, stdout=-1, stderr=-1)
-    self.assertEqual(self.result.error['stdout'], str(output[0]))
+    popen_mock.assert_called_with(
+        cmd, stdout=-1, stderr=-1, cwd=None, env=None, text=True,
+        encoding='utf-8')
     self.assertEqual(self.result.error['stderr'], str(output[1]))
     self.assertEqual(stdout_data, output[0])
     self.result.close.assert_called_with(self.task, success=True)
@@ -266,7 +295,7 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
   def testTurbiniaTaskExecuteFailure(self, popen_mock):
     """Test execution with failure case."""
     cmd = 'test cmd'
-    output = (b'test stdout', b'test stderr')
+    output = ('test stdout', 'test stderr')
 
     self.result.close = mock.MagicMock()
     proc_mock = mock.MagicMock()
@@ -278,15 +307,33 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
 
     # Command was executed and TurbiniaTaskResult.close() was called with
     # unsuccessful status.
-    popen_mock.assert_called_with(cmd, stdout=-1, stderr=-1)
+    popen_mock.assert_called_with(
+        cmd, stdout=-1, stderr=-1, cwd=None, env=None, text=True,
+        encoding='utf-8')
     self.result.close.assert_called_with(
         self.task, success=False, status=mock.ANY)
+
+  def testTurbiniaTaskExecuteTimeout(self):
+    """Test execution with subprocess timeout case."""
+    cmd = 'sleep 3'
+    self.result.close = mock.MagicMock()
+    ret, result = self.task.execute(cmd, self.result, shell=True, timeout=1)
+
+    # Command was executed and TurbiniaTaskResult.close() was called with
+    # unsuccessful status.
+    self.result.close.assert_called_with(
+        self.task, success=False, status=mock.ANY)
+    result_call_args = self.result.close.call_args.kwargs
+    # 'timeout' string shows up in status message
+    self.assertIn('timeout', result_call_args['status'])
+    # Return value shows job was killed
+    self.assertEqual(ret, -9)
 
   @mock.patch('turbinia.workers.subprocess.Popen')
   def testTurbiniaTaskExecuteEvidenceExists(self, popen_mock):
     """Test execution with new evidence that has valid a source_path."""
     cmd = 'test cmd'
-    output = (b'test stdout', b'test stderr')
+    output = ('test stdout', 'test stderr')
 
     self.result.close = mock.MagicMock()
     proc_mock = mock.MagicMock()
@@ -306,7 +353,7 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
   def testTurbiniaTaskExecuteEvidenceDoesNotExist(self, popen_mock):
     """Test execution with new evidence that does not have a source_path."""
     cmd = 'test cmd'
-    output = (b'test stdout', b'test stderr')
+    output = ('test stdout', 'test stderr')
 
     self.result.close = mock.MagicMock()
     proc_mock = mock.MagicMock()
@@ -322,7 +369,7 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
   def testTurbiniaTaskExecuteEvidenceExistsButEmpty(self, popen_mock):
     """Test execution with new evidence source_path that exists but is empty."""
     cmd = 'test cmd'
-    output = (b'test stdout', b'test stderr')
+    output = ('test stdout', 'test stderr')
 
     self.result.close = mock.MagicMock()
     proc_mock = mock.MagicMock()
@@ -341,10 +388,10 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
   @mock.patch('turbinia.workers.Histogram')
   def testTurbiniaSetupMetrics(self, mock_histogram):
     """Tests that metrics are set up correctly."""
-    mock_task_map = {'TestTask1': None, 'TestTask2': None}
+    mock_task_list = {'TestTask1', 'TestTask2'}
     mock_histogram.return_value = "test_metrics"
-    metrics = self.task.setup_metrics(task_map=mock_task_map)
-    self.assertEqual(len(metrics), len(mock_task_map))
+    metrics = self.task.setup_metrics(task_list=mock_task_list)
+    self.assertEqual(len(metrics), len(mock_task_list))
     self.assertEqual(metrics['testtask1'], 'test_metrics')
     self.assertIn('testtask1', metrics)
 
@@ -353,7 +400,8 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     self.evidence.preprocess = mock.MagicMock()
     self.task.evidence_setup(self.evidence)
     self.evidence.preprocess.assert_called_with(
-        self.task.tmp_dir, required_states=self.task.REQUIRED_STATES)
+        self.task.id, tmp_dir=self.task.tmp_dir,
+        required_states=self.task.REQUIRED_STATES)
 
   def testEvidenceSetupStateNotFulfilled(self):
     """Test that evidence setup throws exception when states don't match."""
@@ -369,3 +417,32 @@ class TestTurbiniaTask(TestTurbiniaTaskBase):
     # Runs fine after setting the state
     self.evidence.state[evidence.EvidenceState.ATTACHED] = True
     self.task.evidence_setup(self.evidence)
+
+  def testAddEvidence(self):
+    """Test that add_evidence adds evidence when appropriate."""
+
+    # Test that evidence gets added in the base case (source_path points to file
+    # with contents)
+    self.evidence.name = 'AddEvidenceTest'
+    with open(self.evidence.source_path, 'w') as source_path:
+      source_path.write('test')
+    self.result.add_evidence(self.evidence, 'EmptyConfig')
+    self.assertEqual(len(self.result.evidence), 1)
+    self.assertEqual(self.result.evidence[0].name, 'AddEvidenceTest')
+    self.assertEqual(self.result.evidence[0].config, 'EmptyConfig')
+
+    # Test that evidence is *not* added when source_path points to file with no
+    # contents.
+    self.result.evidence = []
+    empty_file = tempfile.mkstemp(dir=self.base_output_dir)[1]
+    self.remove_files.append(empty_file)
+    self.evidence.source_path = empty_file
+    self.result.add_evidence(self.evidence, 'EmptyConfig')
+    # Evidence with empty path was not in evidence list
+    self.assertEqual(len(self.result.evidence), 0)
+
+    # Test that evidence with source_path=None gets added
+    self.result.evidence = []
+    self.evidence.source_path = None
+    self.result.add_evidence(self.evidence, 'EmptyConfig')
+    self.assertEqual(self.result.evidence[0].name, 'AddEvidenceTest')

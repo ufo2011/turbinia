@@ -14,13 +14,8 @@
 # limitations under the License.
 """Task for analysing Jupyter."""
 
-from __future__ import unicode_literals
-
 import os
-import re
 
-from turbinia import TurbiniaException
-from turbinia.evidence import EvidenceState as state
 from turbinia.evidence import ReportText
 from turbinia.lib import text_formatter as fmt
 from turbinia.workers import TurbiniaTask
@@ -30,7 +25,8 @@ from turbinia.workers import Priority
 class JupyterAnalysisTask(TurbiniaTask):
   """Task to analyze a Jupyter Notebook config."""
 
-  REQUIRED_STATES = [state.ATTACHED, state.MOUNTED]
+  # Input Evidence is ExportedFileArtifact so does not need to be pre-processed.
+  REQUIRED_STATES = []
 
   def run(self, evidence, result):
     """Run the Jupyter worker.
@@ -61,9 +57,9 @@ class JupyterAnalysisTask(TurbiniaTask):
     result.report_data = report
 
     # Write the report to the output file.
-    with open(output_file_path, 'w') as fh:
-      fh.write(output_evidence.text_data.encode('utf8'))
-      fh.write('\n'.encode('utf8'))
+    with open(output_file_path, 'w', encoding='utf-8') as fh:
+      fh.write(output_evidence.text_data)
+      fh.write('\n')
 
     # Add the resulting evidence to the result object.
     result.add_evidence(output_evidence, evidence.config)
@@ -75,7 +71,7 @@ class JupyterAnalysisTask(TurbiniaTask):
     """Extract security related configs from Jupyter configuration files.
 
     Args:
-      config (str): configuration file content.
+      jupyter_config (str): configuration file content.
 
     Returns:
       Tuple(

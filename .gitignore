@@ -12,6 +12,9 @@
 */_build/
 /_sources/
 /.tox
+charts/
+conf/
+evidence/
 
 # And don't care about the 'egg'.
 /turbinia.egg-info
@@ -30,8 +33,14 @@ terraform/gcp/*.auto.tfvars
 
 # Exclude IDE files
 .idea/
-.vscode/
 
 # Exclude  logs
 *.log
 *.log.gz
+
+# Exclude Python virtualenvs
+venv/
+.venv/
+
+# Ignore OpenAPI code generator temporary files
+.openapi-generator/

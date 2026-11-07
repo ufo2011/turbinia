@@ -19,7 +19,7 @@ import logging
 
 from turbinia.evidence import EvidenceCollection
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
 
 
 class TurbiniaJob:
@@ -36,6 +36,7 @@ class TurbiniaJob:
     docker_image (str): Docker image to run for this job or None if unavailable.
     completed_task_count (int): The number of Tasks that have been removed.
     evidence (EvidenceCollection): The Evidence returned by Tasks from this Job.
+    timeout (int): The amount of seconds to wait before timing out.
   """
 
   NAME = 'name'
@@ -53,6 +54,7 @@ class TurbiniaJob:
     self.evidence = EvidenceCollection()
     self.evidence.request_id = request_id
     self.evidence.config = evidence_config if evidence_config else {}
+    self.timeout = None
 
   def check_done(self):
     """Check to see if all Tasks for this Job have completed.
@@ -108,10 +110,9 @@ class TurbiniaJob:
 
     if remove_task:
       self.tasks.remove(remove_task)
-      log.debug('Removed task {0:s} from Job {1:s}'.format(task_id, self.name))
+      log.debug(f'Removed task {task_id:s} from Job {self.name:s}')
       self.completed_task_count += 1
     else:
       log.debug(
-          'Could not find task {0:s} to remove from Job {1:s}'.format(
-              task_id, self.name))
+          f'Could not find task {task_id:s} to remove from Job {self.name:s}')
     return bool(remove_task)

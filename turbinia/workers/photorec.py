@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Task to run Photorec on disk images and retrieve deleted files ."""
-from __future__ import unicode_literals
 
 import os
 
@@ -57,13 +56,15 @@ class PhotorecTask(TurbiniaTask):
       else:
         cmd.append(evidence.local_path)
       cmd.append('options,paranoid,keep_corrupted_file,search')
-      cmd = ' '.join(cmd)
       # Add a log line to the result that will be returned.
-      result.log('Running photorec as [{0:s}]'.format(cmd))
+      result.log(f'Running photorec as [{cmd!s}]')
       # Actually execute the binary
       self.execute(
-          cmd, result, log_files=[photorec_log], new_evidence=[output_evidence],
-          shell=True)
+          cmd,
+          result,
+          log_files=[photorec_log],
+          new_evidence=[output_evidence],
+      )
       status = ''
       if os.path.exists(output_evidence.local_path):
         output_evidence.compress()

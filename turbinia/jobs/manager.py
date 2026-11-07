@@ -14,9 +14,9 @@
 # limitations under the License.
 """This file contains a class for managing jobs."""
 
-from __future__ import unicode_literals
-
 from turbinia import TurbiniaException
+
+DEFAULT_TIMEOUT = 7200
 
 
 class JobsManager:
@@ -89,7 +89,7 @@ class JobsManager:
     """
     job_name = job_class.NAME.lower()
     if job_name not in cls._job_classes:
-      raise KeyError('job class not set for name: {0:s}'.format(job_class.NAME))
+      raise KeyError(f'job class not set for name: {job_class.NAME:s}')
 
     del cls._job_classes[job_name]
 
@@ -145,7 +145,7 @@ class JobsManager:
     """
     job_name = job_name.lower()
     if job_name not in cls._job_classes:
-      raise KeyError('job class not set for name: {0:s}.'.format(job_name))
+      raise KeyError(f'job class not set for name: {job_name:s}.')
 
     job_class = cls._job_classes[job_name]
     return job_class()
@@ -210,8 +210,7 @@ class JobsManager:
     """
     job_name = job_class.NAME.lower()
     if job_name in cls._job_classes:
-      raise KeyError(
-          'job class already set for name: {0:s}.'.format(job_class.NAME))
+      raise KeyError(f'job class already set for name: {job_class.NAME:s}.')
 
     cls._job_classes[job_name] = job_class
 
@@ -256,3 +255,30 @@ class JobsManager:
     if hasattr(job_class, 'docker_image') and job_class:
       docker_image = job_class.docker_image
     return docker_image
+
+  @classmethod
+  def RegisterTimeout(cls, job_name, timeout):
+    """Registers a timeout for the job.
+
+    Args:
+      job_name(str): name of the job.
+      timeout(int): The amount of seconds to wait before timing out.
+    """
+    job_name = job_name.lower()
+    cls._job_classes[job_name].timeout = timeout
+
+  @classmethod
+  def GetTimeoutValue(cls, job_name):
+    """Retrieves the timeout value associated with the job.
+
+    Args:
+      job_name(str): name of the job.
+
+    Returns:
+      timeout(int): The timeout value.
+    """
+    timeout = DEFAULT_TIMEOUT
+    job_class = cls._job_classes.get(job_name.lower())
+    if hasattr(job_class, 'timeout') and job_class:
+      timeout = job_class.timeout
+    return timeout

@@ -15,8 +15,6 @@
 # -*- coding: utf-8 -*-
 """Tests that all jobs are imported correctly."""
 
-from __future__ import unicode_literals
-
 import io
 import re
 import os
@@ -41,7 +39,7 @@ class JobImportTest(unittest.TestCase):
       ignorable_files (Iterable[str]): names of Python files that don't need to
           appear in __init__.py. For example, 'manager.py'.
     """
-    init_path = '{0:s}/__init__.py'.format(path)
+    init_path = f'{path:s}/__init__.py'
     with io.open(init_path, mode='r', encoding='utf-8') as init_file:
       init_content = init_file.read()
 
@@ -55,9 +53,9 @@ class JobImportTest(unittest.TestCase):
         module_name, _, _ = filename.partition('.')
         import_expression = re.compile(r' import {0:s}\b'.format(module_name))
 
-        self.assertRegexpMatches(
+        self.assertRegex(
             init_content, import_expression,
-            '{0:s} not imported in {1:s}'.format(module_name, init_path))
+            f'{module_name:s} not imported in {init_path:s}')
 
   def testJobsImported(self):
     """Tests that all jobs are imported."""

@@ -14,8 +14,6 @@
 # limitations under the License.
 """Task to extract binary files from an evidence object provided."""
 
-from __future__ import unicode_literals
-
 import logging
 import json
 import os
@@ -37,6 +35,14 @@ class BinaryExtractorTask(TurbiniaTask):
   """
 
   REQUIRED_STATES = [state.ATTACHED]
+
+  TASK_CONFIG = {
+      # This is an arbitrary path that will be put into a custom artifact
+      # definition so that the files at this path are extracted.  See the path
+      # specification format in the ForensicArtifacts documentation:
+      # https://artifacts.readthedocs.io/en/latest/sources/Format-specification.html
+      'binary_extraction_path': None
+  }
 
   def __init__(self, *args, **kwargs):
     """Initializes BinaryExtractorTask."""
@@ -71,7 +77,7 @@ class BinaryExtractorTask(TurbiniaTask):
     return (binary_cnt, hash_cnt)
 
   def run(self, evidence, result):
-    """Task that extracts binaries with image_export.py.
+    """Task that extracts binaries with image_export.
 
     Args:
         evidence (Evidence object):  The evidence we will process.
@@ -92,17 +98,16 @@ class BinaryExtractorTask(TurbiniaTask):
     self.json_path = os.path.join(self.binary_extraction_dir, 'hashes.json')
 
     cmd = [
-        'image_export.py', '--partitions', 'all', '--no_vss', '--logfile',
-        image_export_log
+        'image_export', '--partitions', 'all', '--volumes', 'all',
+        '--vss_stores', 'none', '--unattended', '--logfile', image_export_log
     ]
 
-    if evidence.config and evidence.config.get('binary_extraction_path'):
+    if self.task_config.get('binary_extraction_path'):
       artifact_dir = os.path.join(self.tmp_dir, 'artifacts')
       artifact_file = os.path.join(artifact_dir, 'artifacts.yaml')
       os.mkdir(artifact_dir)
-      binary_extraction_path = evidence.config.get('binary_extraction_path')
-      result.log(
-          'Using custom artifact path {0:s}'.format(binary_extraction_path))
+      binary_extraction_path = self.task_config.get('binary_extraction_path')
+      result.log(f'Using custom artifact path {binary_extraction_path:s}')
 
       artifact_text = textwrap.dedent(
           """
@@ -124,11 +129,15 @@ class BinaryExtractorTask(TurbiniaTask):
     else:
       cmd.extend(['--signatures', 'elf,exe_mz'])
 
-    if config.DEBUG_TASKS or evidence.config.get('debug_tasks'):
+    if evidence.credentials:
+      for credential_type, credential_data in evidence.credentials:
+        cmd.extend(['--credential', f'{credential_type:s}:{credential_data:s}'])
+
+    if config.DEBUG_TASKS or self.task_config.get('debug_tasks'):
       cmd.append('-d')
     cmd.extend(['-w', self.binary_extraction_dir, evidence.local_path])
 
-    result.log('Running image_export as [{0:s}]'.format(' '.join(cmd)))
+    result.log(f"Running image_export as [{' '.join(cmd):s}]")
     self.execute(
         cmd, result, log_files=[image_export_log, self.json_path],
         new_evidence=[binary_extraction_evidence])
@@ -136,19 +145,19 @@ class BinaryExtractorTask(TurbiniaTask):
     try:
       binary_cnt, hash_cnt = self.check_extraction()
     except TurbiniaException as exception:
-      message = 'File extraction failed: {0!s}'.format(exception)
+      message = f'File extraction failed: {exception!s}'
       result.close(self, success=False, status=message)
       return result
 
     status = (
-        'Extracted {0:d} hashes and {1:d} files from the '
-        'evidence.'.format(hash_cnt, binary_cnt))
+        f'Extracted {hash_cnt:d} hashes and {binary_cnt:d} files from the '
+        f'evidence.')
 
     if hash_cnt != binary_cnt:
       result.log(
           'Number of extracted binaries is not equal to the number '
           'of extracted hashes. This might indicate issues with '
-          'image_export.py. Check binary_extraction.log for more '
+          'image_export. Check binary_extraction.log for more '
           'details.', logging.WARNING)
 
     binary_extraction_evidence.compress()

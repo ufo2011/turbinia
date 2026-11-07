@@ -14,11 +14,12 @@
 # limitations under the License.
 """Job to execute Bulk Extractor task."""
 
-from __future__ import unicode_literals
-
 from turbinia.evidence import GoogleCloudDisk
+from turbinia.evidence import Directory
+from turbinia.evidence import CompressedDirectory
 from turbinia.evidence import GoogleCloudDiskRawEmbedded
 from turbinia.evidence import RawDisk
+from turbinia.evidence import EwfDisk
 from turbinia.evidence import BulkExtractorOutput
 from turbinia.jobs import interface
 from turbinia.jobs import manager
@@ -33,7 +34,10 @@ class BulkExtractorJob(interface.TurbiniaJob):
   """
 
   # The types of evidence that this Job will process
-  evidence_input = [RawDisk, GoogleCloudDisk, GoogleCloudDiskRawEmbedded]
+  evidence_input = [
+      RawDisk, GoogleCloudDisk, GoogleCloudDiskRawEmbedded, EwfDisk, Directory,
+      CompressedDirectory
+  ]
   evidence_output = [BulkExtractorOutput]
 
   NAME = 'BulkExtractorJob'

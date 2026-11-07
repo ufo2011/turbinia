@@ -14,8 +14,6 @@
 # limitations under the License.
 """Tests for VolatilityTask."""
 
-from __future__ import unicode_literals
-
 import os
 import mock
 
@@ -35,7 +33,7 @@ class VolatilityTaskTest(TestTurbiniaTaskBase):
     self.evidence.module_list = ['TestModule']
     self.task.output_dir = self.task.base_output_dir
     self.output_file_path = os.path.join(
-        self.task.output_dir, '{0:s}.txt'.format(self.task.id))
+        self.task.output_dir, f'{self.task.id:s}.txt')
     self.remove_files.append(self.output_file_path)
     self.setResults(mock_run=False)
 

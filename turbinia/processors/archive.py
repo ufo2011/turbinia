@@ -14,8 +14,6 @@
 # limitations under the License.
 """File archiving processor"""
 
-from __future__ import unicode_literals
-
 import os
 import tarfile
 import logging
@@ -23,7 +21,35 @@ import logging
 from time import time
 from turbinia import TurbiniaException
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
+
+
+def _ValidateTarMember(tar_info, uncompressed_directory):
+  """Validate that a tar member extracts inside the target directory.
+
+  Args:
+    tar_info (tarfile.TarInfo): Metadata for the tar member.
+    uncompressed_directory (str): The target extraction directory.
+
+  Raises:
+    TurbiniaException: If the tar member could write outside the target
+        extraction directory.
+  """
+  base_directory = os.path.realpath(uncompressed_directory)
+  member_path = os.path.realpath(os.path.join(base_directory, tar_info.name))
+
+  if os.path.commonpath([base_directory, member_path]) != base_directory:
+    raise TurbiniaException(
+        f'Tar file member path is outside the extraction directory: '
+        f'{tar_info.name:s}')
+
+  if tar_info.issym() or tar_info.islnk():
+    link_path = os.path.realpath(
+        os.path.join(os.path.dirname(member_path), tar_info.linkname))
+    if os.path.commonpath([base_directory, link_path]) != base_directory:
+      raise TurbiniaException(
+          f'Tar file link target is outside the extraction directory: '
+          f'{tar_info.name:s}')
 
 
 def ValidateTarFile(compressed_directory):
@@ -40,8 +66,7 @@ def ValidateTarFile(compressed_directory):
   """
   if not os.path.exists(compressed_directory):
     raise TurbiniaException(
-        'The File or Directory does not exist: {0:s}'.format(
-            compressed_directory))
+        f'The File or Directory does not exist: {compressed_directory:s}')
 
   # TODO(wyassine): rewrite this check so it is not dependent
   # on a list of hard coded extensions and instead have a
@@ -66,8 +91,7 @@ def CompressDirectory(uncompressed_directory, output_path=None):
   # Error handling check for a non-existent file or directory.
   if not os.path.exists(uncompressed_directory):
     raise TurbiniaException(
-        'The File or Directory does not exist: {0:s}'.format(
-            uncompressed_directory))
+        f'The File or Directory does not exist: {uncompressed_directory:s}')
 
   # Iterate through a given list of files and compress them.
   compressed_directory = uncompressed_directory + '.tar.gz'
@@ -82,10 +106,10 @@ def CompressDirectory(uncompressed_directory, output_path=None):
           'The tar file has been created and '
           'can be found at: {0:s}'.format(compressed_directory))
   except IOError as exception:
-    raise TurbiniaException('An error has occurred: {0!s}'.format(exception))
+    raise TurbiniaException(f'An error has occurred: {exception!s}')
   except tarfile.TarError as exception:
     raise TurbiniaException(
-        'An error has while compressing the directory: {0!s}'.format(exception))
+        f'An error has while compressing the directory: {exception!s}')
   return compressed_directory
 
 
@@ -109,16 +133,17 @@ def UncompressTarFile(compressed_directory, output_tmp):
 
   # Uncompress the tar file into the uncompressed directory.
   try:
-    tar = tarfile.TarFile.open(compressed_directory)
-    tar.extractall(path=uncompressed_directory)
-    tar.close()
+    with tarfile.TarFile.open(compressed_directory) as tar:
+      for tar_info in tar.getmembers():
+        _ValidateTarMember(tar_info, uncompressed_directory)
+      tar.extractall(path=uncompressed_directory)
     log.info(
         'The tar file has been uncompressed to the following directory: {0:s}'
         .format(uncompressed_directory))
   except IOError as exception:
-    raise TurbiniaException('An error has occurred: {0!s}'.format(exception))
+    raise TurbiniaException(f'An error has occurred: {exception!s}')
   except tarfile.TarError as exception:
     raise TurbiniaException(
-        'An error has occurred while uncompressing the tar '
-        'file: {0!s}'.format(exception))
+        f'An error has occurred while uncompressing the tar file: {exception!s}'
+    )
   return uncompressed_directory

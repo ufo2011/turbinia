@@ -19,21 +19,19 @@ Handles worker communication and new evidence requests.
 
 # fix celery naming collision (this file vs. module)
 from __future__ import absolute_import
-from __future__ import unicode_literals
 
 import logging
-
-from six.moves import queue
-
 import celery
 import kombu
+
 from kombu.exceptions import OperationalError
 from amqp.exceptions import ChannelError
 
 from turbinia import config
+from turbinia import celeryconfig
 from turbinia.message import TurbiniaMessageBase
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
 
 
 class TurbiniaCelery:
@@ -52,18 +50,7 @@ class TurbiniaCelery:
     config.LoadConfig()
     self.app = celery.Celery(
         'turbinia', broker=config.CELERY_BROKER, backend=config.CELERY_BACKEND)
-    self.app.conf.update(
-        task_default_queue=config.INSTANCE_ID,
-        accept_content=['json'],
-        # TODO(ericzinnikas): Without task_acks_late Celery workers will start
-        # on one task and prefetch another (i.e. can result in 1 worker getting
-        # 2 plaso jobs while another worker is free). But enabling this causes
-        # problems with certain Celery brokers (duplicated work).
-        task_acks_late=False,
-        task_track_started=True,
-        worker_concurrency=1,
-        worker_prefetch_multiplier=1,
-    )
+    self.app.config_from_object(celeryconfig)
 
 
 class TurbiniaKombu(TurbiniaMessageBase):
@@ -81,7 +68,11 @@ class TurbiniaKombu(TurbiniaMessageBase):
   def setup(self):
     """Set up Kombu SimpleBuffer"""
     config.LoadConfig()
-    conn = kombu.Connection(config.KOMBU_BROKER)
+    conn = kombu.Connection(
+        config.KOMBU_BROKER, transport_options={
+            'socket_timeout': 10,
+            'socket_keepalive': True
+        })
     if config.KOMBU_DURABLE:
       self.queue = conn.SimpleQueue(name=self.routing_key)
     else:
@@ -102,17 +93,18 @@ class TurbiniaKombu(TurbiniaMessageBase):
           requests.append(request)
           if self.queue.queue.durable:
             message.ack()
-      except queue.Empty:
+      except self.queue.Empty:
         break
       except ChannelError:
         break
-      except OperationalError as e:
+      except OperationalError as exception:
         log.warning(
             'Caught recoverable message transport connection error when ' +
-            'fetching from queue: {0!s}'.format(e))
+            f'fetching from queue: {exception!s}')
         break
 
-    log.debug('Received {0:d} messages'.format(len(requests)))
+    if len(requests):
+      log.debug(f'Received {len(requests):d} messages')
     return requests
 
   def send_message(self, message):

@@ -14,17 +14,13 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
-from __future__ import unicode_literals
-import re
-
-from recommonmark.parser import CommonMarkParser
 from recommonmark.transform import AutoStructify
 from docutils import nodes, transforms
 
 # -- Project information -----------------------------------------------------
 
 project = 'Turbinia'
-copyright = '2020, Google Inc'
+copyright = '2023, Google Inc'
 author = 'Turbinia maintainers'
 
 # -- General configuration ---------------------------------------------------
@@ -34,8 +30,7 @@ author = 'Turbinia maintainers'
 # ones.
 extensions = [
     'sphinx.ext.autodoc', 'sphinx.ext.doctest', 'sphinx.ext.coverage',
-    'sphinx.ext.viewcode', 'sphinx.ext.napoleon', 'sphinx_markdown_tables',
-    'recommonmark'
+    'sphinx.ext.viewcode', 'sphinx.ext.napoleon', 'recommonmark'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -76,13 +71,19 @@ html_sidebars = {
     ]
 }
 
+# Add linkcheck anchor names that should be ignored in validation
+# Due to https://github.com/sphinx-doc/sphinx/issues/9255
+linkcheck_anchors_ignore = [
+    'turbinia-source-and-deployment-code', 'install-the-turbinia-client'
+]
+
 # Adding retries to linkchecks before declaring a link broken
 linkcheck_retries = 3
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'turbiniadoc'
 
-html_logo = "images/turbinia-logo.jpg"
+html_logo = 'images/turbinia-logo.jpg'
 
 
 class ProcessLink(transforms.Transform):

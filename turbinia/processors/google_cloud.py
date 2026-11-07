@@ -14,8 +14,6 @@
 # limitations under the License.
 """Evidence processor for Google Cloud resources."""
 
-from __future__ import unicode_literals
-
 import glob
 import logging
 import os
@@ -25,12 +23,19 @@ import time
 from six.moves import urllib
 
 from libcloudforensics.providers.gcp.internal import project as gcp_project
+from prometheus_client import Counter
 from turbinia import config
 from turbinia import TurbiniaException
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
 
 RETRY_MAX = 10
+ATTACH_SLEEP_TIME = 3
+DETACH_SLEEP_TIME = 5
+
+turbinia_nonexisting_disk_path = Counter(
+    'turbinia_nonexisting_disk_path',
+    'Total number of non existing disk paths after attempts to attach')
 
 
 def IsBlockDevice(path):
@@ -60,12 +65,14 @@ def GetLocalInstanceName():
   """
   # TODO(aarontp): Use cloud API instead of manual requests to metadata service.
   req = urllib.request.Request(
-      'http://metadata.google.internal/computeMetadata/v1/instance/name', None,
-      {'Metadata-Flavor': 'Google'})
+      'http://metadata.google.internal/computeMetadata/v1/instance/hostname',
+      None, {'Metadata-Flavor': 'Google'})
   try:
     instance = urllib.request.urlopen(req).read().decode('utf-8')
-  except urllib.error.HTTPError as e:
-    raise TurbiniaException('Could not get instance name: {0!s}'.format(e))
+    #Grab everything excluding the domain part of the hostname
+    instance = instance.split('.')[0]
+  except urllib.error.HTTPError as exception:
+    raise TurbiniaException(f'Could not get instance name: {exception!s}')
 
   return instance
 
@@ -87,10 +94,10 @@ def PreprocessAttachDisk(disk_name):
   Raises:
     TurbiniaException: If the device is not a block device.
   """
-  path = '/dev/disk/by-id/google-{0:s}'.format(disk_name)
+  path = f'/dev/disk/by-id/google-{disk_name:s}'
   if IsBlockDevice(path):
-    log.info('Disk {0:s} already attached!'.format(disk_name))
-    return (path, sorted(glob.glob('{0:s}-part*'.format(path))))
+    log.info(f'Disk {disk_name:s} already attached!')
+    return (path, sorted(glob.glob(f'{path:s}-part*')))
 
   config.LoadConfig()
   instance_name = GetLocalInstanceName()
@@ -99,31 +106,32 @@ def PreprocessAttachDisk(disk_name):
   instance = project.compute.GetInstance(instance_name)
 
   disk = project.compute.GetDisk(disk_name)
-  log.info(
-      'Attaching disk {0:s} to instance {1:s}'.format(disk_name, instance_name))
+  log.info(f'Attaching disk {disk_name:s} to instance {instance_name:s}')
   instance.AttachDisk(disk)
 
   # Make sure we have a proper block device
   for _ in range(RETRY_MAX):
     if IsBlockDevice(path):
-      log.info('Block device {0:s} successfully attached'.format(path))
+      log.info(f'Block device {path:s} successfully attached')
       break
     if os.path.exists(path):
-      log.info(
-          'Block device {0:s} mode is {1}'.format(path,
-                                                  os.stat(path).st_mode))
-    time.sleep(1)
+      log.info(f'Block device {path:s} mode is {os.stat(path).st_mode}')
+    time.sleep(ATTACH_SLEEP_TIME)
+
+  # Final sleep to allow time between API calls.
+  time.sleep(ATTACH_SLEEP_TIME)
 
   message = None
   if not os.path.exists(path):
-    message = 'Device path {0:s} does not exist'.format(path)
+    turbinia_nonexisting_disk_path.inc()
+    message = f'Device path {path:s} does not exist'
   elif not IsBlockDevice(path):
-    message = 'Device path {0:s} is not a block device'.format(path)
+    message = f'Device path {path:s} is not a block device'
   if message:
     log.error(message)
     raise TurbiniaException(message)
 
-  return (path, sorted(glob.glob('{0:s}-part*'.format(path))))
+  return (path, sorted(glob.glob(f'{path:s}-part*')))
 
 
 def PostprocessDetachDisk(disk_name, local_path):
@@ -137,10 +145,10 @@ def PostprocessDetachDisk(disk_name, local_path):
   if local_path:
     path = local_path
   else:
-    path = '/dev/disk/by-id/google-{0:s}'.format(disk_name)
+    path = f'/dev/disk/by-id/google-{disk_name:s}'
 
   if not IsBlockDevice(path):
-    log.info('Disk {0:s} already detached!'.format(disk_name))
+    log.info(f'Disk {disk_name:s} already detached!')
     return
 
   config.LoadConfig()
@@ -149,14 +157,15 @@ def PostprocessDetachDisk(disk_name, local_path):
       config.TURBINIA_PROJECT, default_zone=config.TURBINIA_ZONE)
   instance = project.compute.GetInstance(instance_name)
   disk = project.compute.GetDisk(disk_name)
-  log.info(
-      'Detaching disk {0:s} from instance {1:s}'.format(
-          disk_name, instance_name))
+  log.info(f'Detaching disk {disk_name:s} from instance {instance_name:s}')
   instance.DetachDisk(disk)
 
   # Make sure device is Detached
   for _ in range(RETRY_MAX):
     if not os.path.exists(path):
-      log.info('Block device {0:s} is no longer attached'.format(path))
+      log.info(f'Block device {path:s} is no longer attached')
       break
-    time.sleep(5)
+    time.sleep(DETACH_SLEEP_TIME)
+
+  # Final sleep to allow time between API calls.
+  time.sleep(DETACH_SLEEP_TIME)

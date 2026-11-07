@@ -20,17 +20,17 @@ from dfvfs.helpers import volume_scanner
 from dfvfs.lib import definitions as dfvfs_definitions
 from dfvfs.lib import errors as dfvfs_errors
 
-from turbinia.lib.dfvfs_classes import UnattendedVolumeScannerMediator
 from turbinia import TurbiniaException
 
-log = logging.getLogger('turbinia')
+log = logging.getLogger(__name__)
 
 
-def Enumerate(evidence):
+def Enumerate(evidence, location=None):
   """Uses dfVFS to enumerate partitions in a disk / image.
 
   Args:
     evidence: Evidence object to be scanned.
+    location: dfVFS partition location to be scanned
 
   Raises:
     TurbiniaException if source evidence can't be scanned.
@@ -38,18 +38,33 @@ def Enumerate(evidence):
   Returns:
     list[dfVFS.path_spec]: path specs for identified partitions
   """
-  dfvfs_definitions.PREFERRED_GPT_BACK_END = (
-      dfvfs_definitions.TYPE_INDICATOR_GPT)
-  mediator = UnattendedVolumeScannerMediator()
-  mediator.credentials = evidence.credentials
+  options = volume_scanner.VolumeScannerOptions()
+  options.partitions = ['all']
+  options.volumes = ['all']
+  if location:
+    log.debug(
+        f'Scanning {evidence.name:s} for partition at location {location!s}')
+    # APFS and LVM are volumes rather than partitions.
+    if location.find('apfs') != -1 or location.find('lvm') != -1:
+      options.volumes = [location.replace('/', '')]
+    elif location in ('/', '\\'):
+      options.partitions = [location]
+    else:
+      options.partitions = [location.replace('/', '')]
+  # Not processing volume snapshots
+  options.snapshots = ['none']
+  options.credentials = evidence.credentials
+
   path_specs = []
   try:
-    scanner = volume_scanner.VolumeScanner(mediator=mediator)
-    path_specs = scanner.GetBasePathSpecs(evidence.local_path)
-  except dfvfs_errors.ScannerError as e:
+    # Setting the volume scanner mediator to None will cause the volume scanner
+    # to operate in unattended mode
+    scanner = volume_scanner.VolumeScanner(mediator=None)
+    path_specs = scanner.GetBasePathSpecs(evidence.local_path, options=options)
+  except dfvfs_errors.ScannerError as exception:
     raise TurbiniaException(
-        'Could not enumerate partitions [{0!s}]: {1!s}'.format(
-            evidence.local_path, e))
+        f'Could not enumerate partitions [{evidence.local_path!s}]: '
+        f'{exception!s}') from exception
 
   return path_specs
 
@@ -65,35 +80,12 @@ def GetPartitionEncryptionType(path_spec):
   """
   encryption_type = None
 
-  if not path_spec.HasParent():
+  if not path_spec or not path_spec.HasParent():
     return None
 
   if path_spec.parent.type_indicator == dfvfs_definitions.TYPE_INDICATOR_BDE:
     encryption_type = 'BDE'
+  elif path_spec.parent.type_indicator == (
+      dfvfs_definitions.TYPE_INDICATOR_LUKSDE):
+    encryption_type = 'LUKSDE'
   return encryption_type
-
-
-def GetPathSpecByLocation(path_specs, location):
-  """Finds a path_spec from a list of path_specs for a given location.
-
-  Args:
-    path_specs (list[dfVFS.path_spec]): List of path_specs from volume scanner.
-    location (str): dfVFS location to search for.
-
-  Returns:
-    dfVFS.path_spec for the given location or None if not found.
-  """
-  for path_spec in path_specs:
-    child_path_spec = path_spec
-    fs_location = getattr(path_spec, 'location', None)
-    while path_spec.HasParent():
-      type_indicator = path_spec.type_indicator
-      if type_indicator in (dfvfs_definitions.TYPE_INDICATOR_TSK_PARTITION,
-                            dfvfs_definitions.TYPE_INDICATOR_GPT):
-        if fs_location in ('\\', '/'):
-          fs_location = getattr(path_spec, 'location', None)
-        break
-      path_spec = path_spec.parent
-    if fs_location == location:
-      return child_path_spec
-  return None

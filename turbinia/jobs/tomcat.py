@@ -13,12 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Job to execute Apache Tomcat analysis task."""
-from __future__ import unicode_literals
+
 from turbinia.workers import artifact
-from turbinia.workers import tomcat
+from turbinia.workers.analysis import tomcat
+from turbinia.evidence import ContainerdContainer
 from turbinia.evidence import Directory
-from turbinia.evidence import DiskPartition
 from turbinia.evidence import DockerContainer
+from turbinia.evidence import GoogleCloudDisk
+from turbinia.evidence import GoogleCloudDiskRawEmbedded
+from turbinia.evidence import RawDisk
+from turbinia.evidence import EwfDisk
 from turbinia.evidence import ExportedFileArtifact
 from turbinia.evidence import ReportText
 from turbinia.jobs import interface
@@ -29,7 +33,10 @@ class TomcatExtractionJob(interface.TurbiniaJob):
   """Extract Apache Tomcat files for analysis."""
 
   # The types of evidence that this Job will process
-  evidence_input = [Directory, DiskPartition, DockerContainer]
+  evidence_input = [
+      Directory, DockerContainer, GoogleCloudDisk, GoogleCloudDiskRawEmbedded,
+      RawDisk, EwfDisk, ContainerdContainer
+  ]
   evidence_output = [ExportedFileArtifact]
 
   NAME = 'TomcatExtractionJob'

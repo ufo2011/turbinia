@@ -19,10 +19,10 @@ possibly guide you. Coordinating up front makes it much easier to avoid
 frustration later on.
 
 We use the github
-[fork and pull review process](https://help.github.com/articles/using-pull-requests)
+[fork and pull review process](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests)
 to review all contributions. First, fork the Turbinia repository by following
-the [github instructions](https://help.github.com/articles/fork-a-repo). Then
-check out your personal fork:
+the [github instructions](https://docs.github.com/en/get-started/quickstart/fork-a-repo).
+Then check out your personal fork:
 
     $ git clone https://github.com/<username>/turbinia.git
 
@@ -74,6 +74,10 @@ over the code in hopes of finding potential bugs or errors (before they become
 bugs and errors). This also improves the overall code quality and makes sure
 that every developer knows to (largely) expect the same coding style.
 
+All Python code changes in the ```turbinia/api/client/``` directory can be
+ignored during reviews. The API client library is auto-generated using
+[OpenAPI Client Generator](https://github.com/OpenAPITools/openapi-generator).
+
 #### Style guide
 
 We primarily follow the
@@ -82,9 +86,9 @@ Various Turbinia specific additions/variations are:
 
 *   Using two spaces instead of four
 *   Quote strings as ' or """ instead of "
-*   Textual strings should be Unicode strings so please include `from __future__
-    import unicode_literals` in new python files.
-*   Use the format() function instead of the %-way of formatting strings.
+*   Exception variables should be named 'exception' not 'e'.
+*   Use type annotations ("type hints") for newly created Python modules.
+*   Use f-String formatting instead of the % operator or str.format().
 *   Use positional or parameter format specifiers with typing e.g. '{0:s}' or
     '{text:s}' instead of '{0}', '{}' or '{:s}'. If we ever want to have
     language specific output strings we don't need to change the entire
@@ -96,6 +100,38 @@ Various Turbinia specific additions/variations are:
 *   Use textual pylint overrides e.g. "# pylint: disable=no-self-argument"
     instead of "# pylint: disable=E0213". For a list of overrides see:
     http://docs.pylint.org/features.html
+
+#### Updating dependencies
+
+If you are adding a new dependency or changing the version of a dependency:
+
+*   Edit ```pyproject.toml``` with the new version for the dependency.
+*   Run ```poetry lock``` to resolve any dependency conflicts. This will regenerate ```poetry.lock```.
+
+#### Updating the API server endpoints and client library
+
+If you are making changes to the API endpoints or adding new ones, make sure to
+reflect the changes in the ```openapi.yaml``` specification file.
+
+Once the updates are reflected in the ```openapi.yaml``` file, you can run the
+OpenAPI generator docker container to update the API client library.
+
+    $ docker pull openapitools/openapi-generator-cli:latest-release
+
+    $ docker run --rm -v ${PWD}:/local openapitools/openapi-generator-cli:latest-release generate -i \
+      /local/turbinia/api/openapi.yaml -g python-pydantic-v1 -o /local/turbinia/api/client \
+      --additional-properties packageName=turbinia_api_lib
+
+This will generate an update library in ```turbinia/api/client```.
+
+Make sure to review and make any necessary changes to the ```pyproject.toml``` file
+(e.g. the version number) and run ```poetry lock``` from the ```api/client``` directory when done.
+
+#### Development flows
+
+We have written several documents for you to get started developing. If you use VSCode you can 
+follow our [codelab](turbinia-codelab-analyser.md) and accompanying [VSCode Development Setup](develop-minikube.md) document to get started. 
+Should you prefer a different development flow we have written a couple of documents to get you started [here](https://turbinia.readthedocs.io/en/latest/developer/index.html) 
 
 #### The small print
 

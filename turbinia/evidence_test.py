@@ -14,8 +14,6 @@
 # limitations under the License.
 """Tests for Turbinia evidence."""
 
-from __future__ import unicode_literals
-
 import json
 import mock
 import unittest
@@ -49,7 +47,6 @@ class TestTurbiniaEvidence(unittest.TestCase):
     collection.add_evidence(rawdisk)
     collection_json = collection.to_json()
     self.assertTrue(isinstance(collection_json, str))
-
     collection_new = evidence.evidence_decode(json.loads(collection_json))
     rawdisk_new = collection_new.collection[0]
     # Make sure that both the collection, and the things in the collection
@@ -69,7 +66,7 @@ class TestTurbiniaEvidence(unittest.TestCase):
     collection_evidence = serialized_evidence['collection'][0]
 
     self.assertIsInstance(serialized_evidence, dict)
-    self.assertEqual(collection_evidence['name'], 'My Evidence')
+    self.assertEqual(collection_evidence['_name'], 'My Evidence')
 
   def testEvidenceSerializationBadType(self):
     """Test that evidence_decode throws error on non-dict type."""
@@ -102,5 +99,6 @@ class TestTurbiniaEvidence(unittest.TestCase):
   def testEvidencePreprocess(self, mock_preprocess):
     """Basic test for Evidence.preprocess()."""
     test_evidence = TestEvidence()
-    test_evidence.preprocess(required_states=[evidence.EvidenceState.ATTACHED])
+    test_evidence.preprocess(
+        'task123', required_states=[evidence.EvidenceState.ATTACHED])
     mock_preprocess.assert_called_with(None, [evidence.EvidenceState.ATTACHED])

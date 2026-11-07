@@ -12,14 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Task for running a test evidence stat call on the supplied evidence.
-
-TODO(aarontp): In the future we can use this for doing a count and healthcheck
-               of all PSQ workers since there is currently no mechanism for that
-               in PSQ.
-"""
-
-from __future__ import unicode_literals
+"""Task for running a test evidence stat call on the supplied evidence."""
 
 import os
 
@@ -29,6 +22,8 @@ from turbinia.evidence import ReportText
 
 class StatTask(TurbiniaTask):
   """Task to run Stat."""
+
+  task_config = {}
 
   def run(self, evidence, result):
     """Test Stat task.
@@ -40,7 +35,7 @@ class StatTask(TurbiniaTask):
     Returns:
         TurbiniaTaskResult: object.
     """
-    result.log('Running stat on evidence {0:s}'.format(evidence.local_path))
+    result.log(f'Running stat on evidence {evidence.local_path:s}')
     report_path = os.path.join(self.output_dir, 'report.txt')
     report = ReportText(source_path=report_path)
     report.text_data = str(os.stat(evidence.local_path))

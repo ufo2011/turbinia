@@ -16,13 +16,15 @@
 
 import logging
 
-log = logging.getLogger('turbinia')
+from importlib import metadata as importlib_metadata
 
-from pkg_resources import get_distribution, DistributionNotFound
+log = logging.getLogger(__name__)
+
 try:
-  __version__ = get_distribution(__name__).version
-except DistributionNotFound:
-  __version__ = "unknown"
+  dist = importlib_metadata.distribution(__name__)
+  __version__ = dist.version
+except importlib_metadata.PackageNotFoundError:
+  __version__ = 'unknown'
 
 
 def log_and_report(message, trace):
@@ -38,11 +40,12 @@ def log_and_report(message, trace):
   log.error(trace)
   # If GCP Error Reporting is enabled.
   config.LoadConfig()
-  if config.STACKDRIVER_TRACEBACK:
+  if config.CLOUD_PROVIDER.lower() == 'gcp' and config.STACKDRIVER_TRACEBACK:
     # Only load google_cloud if needed
     from turbinia.lib import google_cloud
-    client = google_cloud.setup_stackdriver_traceback(config.TURBINIA_PROJECT)
-    client.report_exception()
+    error_client = google_cloud.GCPErrorReporting()
+    message = f'{message}:{trace}'
+    error_client.report(message)
 
 
 class TurbiniaException(Exception):

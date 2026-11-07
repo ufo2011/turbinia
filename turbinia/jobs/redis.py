@@ -14,13 +14,15 @@
 # limitations under the License.
 """Job to execute redis_config analysis task."""
 
-from __future__ import unicode_literals
-
 from turbinia.workers import artifact
-from turbinia.workers import redis
+from turbinia.workers.analysis import redis
+from turbinia.evidence import ContainerdContainer
 from turbinia.evidence import Directory
-from turbinia.evidence import DiskPartition
 from turbinia.evidence import DockerContainer
+from turbinia.evidence import GoogleCloudDisk
+from turbinia.evidence import GoogleCloudDiskRawEmbedded
+from turbinia.evidence import RawDisk
+from turbinia.evidence import EwfDisk
 from turbinia.evidence import ExportedFileArtifact
 from turbinia.evidence import ReportText
 from turbinia.jobs import interface
@@ -31,7 +33,10 @@ class RedisExtractionJob(interface.TurbiniaJob):
   """Extract Redis configuration files for analysis."""
 
   # The types of evidence that this Job will process
-  evidence_input = [Directory, DiskPartition, DockerContainer]
+  evidence_input = [
+      ContainerdContainer, Directory, DockerContainer, GoogleCloudDisk,
+      GoogleCloudDiskRawEmbedded, RawDisk, EwfDisk
+  ]
   evidence_output = [ExportedFileArtifact]
 
   NAME = 'RedisExtractionJob'
@@ -45,9 +50,12 @@ class RedisExtractionJob(interface.TurbiniaJob):
     Returns:
         A list of tasks to schedule.
     """
-    tasks = [
-        artifact.FileArtifactExtractionTask('RedisConfigFile') for _ in evidence
-    ]
+    tasks = []
+    for _ in evidence:
+      tasks.append(artifact.FileArtifactExtractionTask('RedisConfigFile'))
+      tasks.append(
+          artifact.FileArtifactExtractionTask('RedisConfigurationFile'))
+      tasks.append(artifact.FileArtifactExtractionTask('RedisLogFiles'))
     return tasks
 
 
@@ -70,7 +78,9 @@ class RedisAnalysisJob(interface.TurbiniaJob):
     """
     tasks = []
     for evidence_item in evidence:
-      if evidence_item.artifact_name == 'RedisConfigFile':
+      if evidence_item.artifact_name in ('RedisConfigFile',
+                                         'RedisConfigurationFile',
+                                         'RedisLogFiles'):
         tasks.append(redis.RedisAnalysisTask())
     return tasks
 

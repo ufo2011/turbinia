@@ -4,12 +4,15 @@ User documentation
 
 .. toctree::
    :maxdepth: 3
-
+   
    install
-   install-manual
    how-it-works
-   turbinia-local-stack
+   api-server
+   turbinia-web-ui
    using-docker
    operational-details
+   recipes
    debugging
    faq
+   api-lib-docs
+   turbinia-client

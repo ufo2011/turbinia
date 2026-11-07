@@ -1,0 +1,103 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach debugpy Worker",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port":10000
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/home/turbinia"
+                }
+            ]
+        },
+        {
+            "name": "Attach debugpy Server",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port":20000
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/home/turbinia"
+                }
+            ]
+        },
+        {
+            "name": "Attach debugpy API Server",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port":30000
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/home/turbinia"
+                }
+            ]
+        },
+        {
+            "name": "Turbinia API Client",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "turbinia/api/cli/turbinia_client/turbiniacli_tool.py",
+            "args": "${input:apiClientCommand}",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "Attach k8s Worker",
+            "type": "cloudcode.kubernetes",
+            "request": "attach",
+            "language": "Python",
+            "debugPort": 10000,
+            "podSelector": {
+                "app.kubernetes.io/component": "worker"
+            },
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/home/turbinia"
+        },
+        {
+            "name": "Attach k8s Server",
+            "type": "cloudcode.kubernetes",
+            "request": "attach",
+            "language": "Python",
+            "debugPort": 20000,
+            "podSelector": {
+                "app.kubernetes.io/component": "server"
+            },
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/home/turbinia"
+        },
+        {
+            "name": "Attach k8s API Server",
+            "type": "cloudcode.kubernetes",
+            "request": "attach",
+            "language": "Python",
+            "debugPort": 30000,
+            "podSelector": {
+                "app.kubernetes.io/component": "api"
+            },
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/home/turbinia"
+        }
+    ],
+    "inputs": [
+    {
+      "id": "apiClientCommand",
+      "type": "promptString",
+      "description": "API Client Command",
+      "default": "config list"
+    }
+  ]
+}
